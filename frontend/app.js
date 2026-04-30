@@ -1,0 +1,350 @@
+const API = 'http://localhost:8000';
+let collection = 'github_rag';
+let repoUrl = '';
+let pollTimer = null;
+let loading = false;
+let qHistory = [];
+
+// ── Marked config ──
+const rnd = new marked.Renderer();
+rnd.code = (code, lang) => {
+  const l = lang || 'plaintext';
+  let hi = code;
+  try { hi = hljs.getLanguage(l) ? hljs.highlight(code,{language:l}).value : hljs.highlightAuto(code).value; } catch(e){}
+  const id = 'c' + Math.random().toString(36).slice(2);
+  return `<div><div class="code-hdr" style="display:flex; justify-content:space-between; padding:8px 16px; background:rgba(0,0,0,0.5); border-bottom:1px solid rgba(255,255,255,0.1);"><span class="code-lang" style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);text-transform:uppercase;">${l}</span><button class="code-copy-btn" onclick="cpCode('${id}')" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;font-family:var(--font-mono);">copy</button></div><pre><code id="${id}" class="hljs" style="display:block;padding:16px;background:transparent;border:none;overflow-x:auto;">${hi}</code></pre></div>`;
+};
+marked.setOptions({ renderer: rnd, breaks: true, gfm: true });
+
+function cpCode(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent);
+  const btn = el.closest('div').querySelector('.code-copy-btn');
+  if (btn) { btn.textContent='copied!'; setTimeout(()=>btn.textContent='copy', 2000); }
+}
+
+// ── Screen management ──
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  setTimeout(() => {
+    document.getElementById(id).classList.add('active');
+  }, 50);
+}
+
+// ── Onboarding ──
+function pick(url) { 
+  document.getElementById('ob-url').value = url; 
+}
+
+async function startIndex() {
+  const url = document.getElementById('ob-url').value.trim();
+  const errEl = document.getElementById('ob-error');
+  errEl.style.display = 'none';
+
+  if (!url) { showObErr('Please enter a GitHub repository URL'); return; }
+  if (!url.startsWith('http')) { showObErr('Please enter a valid URL starting with https://'); return; }
+
+  repoUrl = url;
+  collection = 'github_rag';
+  document.getElementById('prog-url').textContent = url;
+  document.getElementById('sb-repo-name').textContent = url.replace('https://github.com/', '');
+  document.getElementById('ob-btn').disabled = true;
+
+  show('progress');
+  resetSteps();
+
+  try {
+    const res = await fetch(`${API}/ingest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo_url: url, collection_name: collection })
+    });
+    if (!res.ok) throw new Error('Server returned ' + res.status);
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(doPoll, 1500);
+  } catch(e) {
+    showProgError('Cannot connect to API', 'Make sure the FastAPI server is running at localhost:8000. Start it with: python3 main.py');
+  }
+}
+
+function showObErr(msg) {
+  const el = document.getElementById('ob-error');
+  el.textContent = msg;
+  el.style.display = 'block';
+  document.getElementById('ob-btn').disabled = false;
+}
+
+// ── Progress steps ──
+const STEPS = ['clone','read','embed','store'];
+
+function resetSteps() {
+  STEPS.forEach(s => {
+    setStep(s, 'waiting', null);
+  });
+  setBar(0, 'Initializing server process...');
+  document.getElementById('prog-result').style.display = 'none';
+  document.getElementById('prog-result').className = 'prog-result glass-panel';
+  document.getElementById('chat-btn').style.display = 'none';
+}
+
+function setStep(key, state, detail) {
+  const stepEl = document.getElementById('step-' + key);
+  const det = document.getElementById('detail-' + key);
+
+  stepEl.className = 'step ' + (state === 'active' ? 'active-step' : state);
+
+  if (detail !== null) det.textContent = detail;
+}
+
+function setBar(pct, status) {
+  document.getElementById('prog-fill').style.width = pct + '%';
+  document.getElementById('bar-pct').textContent = pct + '%';
+  document.getElementById('bar-status').textContent = status;
+}
+
+// ── Poll backend status ──
+async function doPoll() {
+  try {
+    const res = await fetch(`${API}/status/${collection}`);
+    const data = await res.json();
+    const s = data.status || 'not_started';
+    handleStatus(s);
+  } catch(e) {}
+}
+
+function handleStatus(s) {
+  if (s === 'cloning') {
+    setStep('clone', 'active', 'Fetching from remote GitHub repository...');
+    setBar(10, 'Cloning repository');
+
+  } else if (s === 'reading_files') {
+    setStep('clone', 'done', 'Repository successfully cloned locally');
+    setStep('read', 'active', 'Scanning and parsing code files...');
+    setBar(30, 'Reading files');
+
+  } else if (s.startsWith('chunking')) {
+    const files = s.split('|')[1] || '?';
+    setStep('clone', 'done', 'Repository cloned');
+    setStep('read', 'done', `Found and processed ${files} code files`);
+    setStep('embed', 'active', 'Breaking code into chunks for vectorization...');
+    setBar(50, 'Chunking code files');
+
+  } else if (s.startsWith('embedding')) {
+    const chunks = s.split('|')[1] || '?';
+    setStep('clone', 'done', 'Repository cloned');
+    setStep('read', 'done', 'Code files parsed');
+    setStep('embed', 'active', `Embedding ${chunks} total chunks into vectors...`);
+    setBar(60, 'Generating vector embeddings');
+
+  } else if (s.startsWith('storing')) {
+    const parts = s.split('|');
+    const cur = parseInt(parts[1]) || 0;
+    const total = parseInt(parts[2]) || 1;
+    const chunks = parts[3] || '?';
+    const pct = Math.round(60 + (cur / total) * 35);
+    setStep('clone', 'done', 'Repository cloned');
+    setStep('read', 'done', 'Code files parsed');
+    setStep('embed', 'done', `${chunks} embeddings generated via local LLM`);
+    setStep('store', 'active', `Storing batch ${cur} of ${total} into ChromaDB...`);
+    setBar(pct, `Storing into vector database (${cur}/${total})`);
+
+  } else if (s.startsWith('done')) {
+    clearInterval(pollTimer);
+    const chunks = s.split('|')[1] || '?';
+    STEPS.forEach(k => setStep(k, 'done', null));
+    setStep('clone', 'done', 'Repository cloned');
+    setStep('read', 'done', 'Code files parsed');
+    setStep('embed', 'done', `${chunks} embeddings generated`);
+    setStep('store', 'done', `All ${chunks} chunks stored safely in ChromaDB`);
+    setBar(100, 'Pipeline Complete!');
+    showProgSuccess(`Codebase Indexed`, `${chunks} embeddings constructed. Ready for natural language queries.`);
+
+  } else if (s.startsWith('failed')) {
+    clearInterval(pollTimer);
+    const msg = s.split('|').slice(1).join('|') || 'Internal server error';
+    showProgError('Indexing Failed', msg);
+  }
+}
+
+function showProgSuccess(title, sub) {
+  const r = document.getElementById('prog-result');
+  r.className = 'prog-result success glass-panel';
+  r.style.display = 'flex';
+  document.getElementById('result-icon').textContent = '✅';
+  document.getElementById('result-title').textContent = title;
+  document.getElementById('result-sub').textContent = sub;
+  document.getElementById('chat-btn').style.display = 'inline-block';
+}
+
+function showProgError(title, sub) {
+  STEPS.forEach(k => setStep(k, 'waiting', null));
+  const r = document.getElementById('prog-result');
+  r.className = 'prog-result error glass-panel';
+  r.style.display = 'flex';
+  document.getElementById('result-icon').textContent = '⚠️';
+  document.getElementById('result-title').textContent = title;
+  document.getElementById('result-sub').textContent = sub;
+}
+
+// ── Navigation ──
+function goChat() { show('chat'); }
+
+function goHome() {
+  if (pollTimer) clearInterval(pollTimer);
+  document.getElementById('ob-btn').disabled = false;
+  document.getElementById('ob-url').value = '';
+  document.getElementById('ob-error').style.display = 'none';
+  resetChatMessages();
+  show('onboarding');
+}
+
+function resetChatMessages() {
+  const msgs = document.getElementById('chat-msgs');
+  msgs.innerHTML = `
+    <div class="chat-empty" id="chat-empty">
+      <div class="chat-empty-icon">⌘</div>
+      <div class="chat-empty-title">Ready to assist.</div>
+      <div class="chat-empty-sub">Query your entire repository in natural language. We'll search the vector space and cross-reference exact files for your answer.</div>
+    </div>`;
+  qHistory = [];
+  document.getElementById('sb-hist').innerHTML = '';
+}
+
+// ── Chat ──
+function resize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 150) + 'px';
+}
+
+function suggest(text) {
+  document.getElementById('chat-ta').value = text;
+  document.getElementById('chat-form').requestSubmit();
+}
+
+document.getElementById('chat-ta').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { 
+    e.preventDefault(); 
+    document.getElementById('chat-form').requestSubmit(); 
+  }
+});
+
+async function send() {
+  const ta = document.getElementById('chat-ta');
+  const q = ta.value.trim();
+  if (!q || loading) return;
+
+  loading = true;
+  ta.value = ''; ta.style.height = 'auto';
+  document.getElementById('send-btn').disabled = true;
+
+  const empty = document.getElementById('chat-empty');
+  if (empty) empty.remove();
+
+  addMsg('user', q, null);
+  qHistory.unshift(q);
+  updateHist();
+
+  const tid = addTyping();
+
+  try {
+    const res = await fetch(`${API}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q, collection_name: collection, top_k: 5 })
+    });
+    const data = await res.json();
+    removeTyping(tid);
+    addMsg('bot', data.answer || ('Error: ' + (data.detail || 'Unknown server fault')), data.sources);
+  } catch(e) {
+    removeTyping(tid);
+    addMsg('bot', '⚠ Failed to reach the API backend. Verify that the FastAPI server is alive.', null);
+  }
+
+  loading = false;
+  document.getElementById('send-btn').disabled = false;
+}
+
+function icon(f) {
+  if (f.endsWith('.py')) return '🐍';
+  if (f.endsWith('.js')||f.endsWith('.ts')) return '⚡';
+  if (f.endsWith('.html')||f.endsWith('.css')) return '🎨';
+  if (f.endsWith('.md')) return '📄';
+  if (f.endsWith('.json')||f.endsWith('.yaml')||f.endsWith('.yml')) return '⚙️';
+  return '📁';
+}
+
+function addMsg(role, text, sources) {
+  const c = document.getElementById('chat-msgs');
+  const m = document.createElement('div');
+  m.className = 'msg ' + role;
+
+  const av = document.createElement('div');
+  av.className = 'msg-av ' + role;
+  av.innerHTML = role === 'bot' ? '<span>⬡</span>' : '<span>◉</span>';
+
+  const b = document.createElement('div');
+  b.className = 'msg-bubble';
+
+  if (role === 'bot' && text) {
+    b.innerHTML = marked.parse(text);
+  } else {
+    b.textContent = text || '';
+  }
+
+  if (sources && sources.length > 0) {
+    const sw = document.createElement('div');
+    sw.className = 'sources-wrap';
+    const sl = document.createElement('div');
+    sl.className = 'sources-label';
+    sl.textContent = 'Reference Sources';
+    sw.appendChild(sl);
+    const sc = document.createElement('div');
+    sc.className = 'sources-chips';
+    sources.forEach(s => {
+      const ch = document.createElement('div');
+      ch.className = 'src-chip';
+      ch.innerHTML = `${icon(s.filename)} <span class="src-chip-name">${s.filename}</span><span class="src-chip-lines">L${s.start_line}-${s.end_line}</span>`;
+      sc.appendChild(ch);
+    });
+    sw.appendChild(sc);
+    b.appendChild(sw);
+  }
+
+  m.appendChild(av); m.appendChild(b);
+  c.appendChild(m);
+  c.scrollTop = c.scrollHeight;
+}
+
+function addTyping() {
+  const c = document.getElementById('chat-msgs');
+  const id = 't' + Date.now();
+  const m = document.createElement('div');
+  m.className = 'msg bot'; m.id = id;
+  const av = document.createElement('div');
+  av.className = 'msg-av bot'; av.textContent = '⬡';
+  const b = document.createElement('div');
+  b.className = 'msg-bubble';
+  b.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+  m.appendChild(av); m.appendChild(b);
+  c.appendChild(m); c.scrollTop = c.scrollHeight;
+  return id;
+}
+
+function removeTyping(id) { const el = document.getElementById(id); if (el) el.remove(); }
+
+function updateHist() {
+  const list = document.getElementById('sb-hist');
+  list.innerHTML = '';
+  qHistory.slice(0, 10).forEach(q => {
+    const i = document.createElement('div');
+    i.className = 'sb-hist-item'; i.textContent = q;
+    i.onclick = () => { document.getElementById('chat-ta').value = q; suggest(q); };
+    list.appendChild(i);
+  });
+}
+
+// Initial setup
+document.addEventListener('DOMContentLoaded', () => {
+  show('onboarding');
+});

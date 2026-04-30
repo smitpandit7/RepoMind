@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RepoMind — Chat with any GitHub Repo</title>
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+  <link rel="stylesheet" href="/frontend/styles.css">
+</head>
+<body>
+  <!-- Dynamic Background Orbs -->
+  <div class="bg-orb bg-orb-1"></div>
+  <div class="bg-orb bg-orb-2"></div>
+  <div class="bg-orb bg-orb-3"></div>
+
+  <!-- ONBOARDING -->
+  <div class="screen" id="onboarding">
+    <div class="ob-header">
+      <div class="ob-logo">
+        <div class="ob-logo-icon">⬡</div>
+        <div class="ob-logo-text">Repo<span>Mind</span></div>
+      </div>
+    </div>
+
+    <div class="ob-card glass-panel">
+      <div>
+        <h1 class="ob-title">Chat with any<br><span>GitHub repository</span></h1>
+        <p class="ob-subtitle">Paste any public repo URL. We'll clone it locally, embed the code into a vector database, and let you ask structural queries naturally.</p>
+      </div>
+
+      <!-- Add form wrapper to prevent default keypress submission behavior causing reloads -->
+      <form id="ingest-form" onsubmit="event.preventDefault(); startIndex();" class="form-group">
+        <label class="ob-label" for="ob-url">Repository URL</label>
+        <div class="ob-input-wrapper">
+          <span class="ob-input-icon">🔍</span>
+          <input class="ob-input" id="ob-url" type="url" required
+            placeholder="https://github.com/username/project" />
+        </div>
+      </form>
+
+      <div id="ob-error" class="ob-error"></div>
+
+      <div class="form-group">
+        <div class="ob-label">Try an example</div>
+        <div class="ob-examples">
+          <div class="ob-example" onclick="pick('https://github.com/tiangolo/fastapi')">tiangolo/fastapi</div>
+          <div class="ob-example" onclick="pick('https://github.com/pallets/flask')">pallets/flask</div>
+          <div class="ob-example" onclick="pick('https://github.com/django/django')">django/django</div>
+        </div>
+      </div>
+
+      <button form="ingest-form" class="btn-primary-glow" id="ob-btn" type="submit">⬆ Index Repository</button>
+    </div>
+  </div>
+
+  <!-- PROGRESS -->
+  <div class="screen" id="progress">
+    <div class="prog-card glass-panel">
+      <div class="prog-header">
+        <h2 class="prog-title">Indexing Codebase</h2>
+        <div class="prog-repo-pill">⬡ <span id="prog-url"></span></div>
+      </div>
+
+      <div class="steps">
+        <div class="step" id="step-clone">
+          <div class="step-icon-wrap">📥</div>
+          <div class="step-info">
+            <div class="step-name">Cloning repository</div>
+            <div class="step-detail" id="detail-clone">Waiting to start...</div>
+          </div>
+        </div>
+        
+        <div class="step" id="step-read">
+          <div class="step-icon-wrap">📂</div>
+          <div class="step-info">
+            <div class="step-name">Reading files</div>
+            <div class="step-detail" id="detail-read">Waiting...</div>
+          </div>
+        </div>
+        
+        <div class="step" id="step-embed">
+          <div class="step-icon-wrap">🧠</div>
+          <div class="step-info">
+            <div class="step-name">Generating embeddings</div>
+            <div class="step-detail" id="detail-embed">Waiting...</div>
+          </div>
+        </div>
+        
+        <div class="step" id="step-store">
+          <div class="step-icon-wrap">💾</div>
+          <div class="step-info">
+            <div class="step-name">Storing in vector database</div>
+            <div class="step-detail" id="detail-store">Waiting...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prog-bar-card">
+        <div class="prog-bar-top">
+          <span class="prog-bar-status" id="bar-status">Initializing...</span>
+          <span class="prog-bar-pct" id="bar-pct">0%</span>
+        </div>
+        <div class="prog-track"><div class="prog-fill" id="prog-fill"></div></div>
+      </div>
+
+      <div class="prog-result glass-panel" id="prog-result">
+        <div class="prog-result-icon" id="result-icon"></div>
+        <div class="prog-result-title" id="result-title"></div>
+        <div class="prog-result-sub" id="result-sub"></div>
+        <div class="prog-actions">
+          <button class="btn-secondary" onclick="goHome()">← Try another repo</button>
+          <button class="btn-primary-glow" id="chat-btn" onclick="goChat()" style="padding: 12px 24px;">Start chatting →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHAT -->
+  <div class="screen" id="chat">
+    <aside class="sidebar">
+      <div class="sb-logo">
+        <div class="sb-logo-icon">⬡</div>
+        <div class="sb-logo-text">Repo<span>Mind</span></div>
+      </div>
+
+      <div class="sb-repo">
+        <div class="sb-repo-label">Indexed Workspace</div>
+        <div class="sb-repo-name" id="sb-repo-name"></div>
+        <div class="sb-repo-ready"><div class="sb-ready-dot"></div>Synced & Ready</div>
+      </div>
+
+      <div>
+        <div class="sb-section">Recent queries</div>
+        <div class="sb-history" id="sb-hist"></div>
+      </div>
+
+      <button class="sb-new-btn" onclick="goHome()">+ Index new repository</button>
+    </aside>
+
+    <div class="chat-main">
+      <div class="chat-topbar">
+        <div class="chat-topbar-title">Interact with <span>Codebase</span></div>
+        <div class="model-pill">RAG · Vector Search</div>
+      </div>
+
+      <div class="chat-msgs" id="chat-msgs">
+        <div class="chat-empty" id="chat-empty">
+          <div class="chat-empty-icon">⌘</div>
+          <div class="chat-empty-title">Ready to assist.</div>
+          <div class="chat-empty-sub">Query your entire repository in natural language. We'll search the vector space and cross-reference exact files for your answer.</div>
+          <div class="chat-chips">
+            <div class="chat-chip" onclick="suggest('Explain the main entry point logic')">Explain entry point</div>
+            <div class="chat-chip" onclick="suggest('Draw the folder architecture')">Folder structure</div>
+            <div class="chat-chip" onclick="suggest('How is state management handled?')">State management</div>
+            <div class="chat-chip" onclick="suggest('What are the critical dependencies?')">Dependencies</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="chat-input-area">
+        <form id="chat-form" onsubmit="event.preventDefault(); send();">
+          <div class="chat-input-wrap">
+            <textarea class="chat-ta" id="chat-ta" rows="1"
+              placeholder="Ask anything about the codebase..."
+              oninput="resize(this)"></textarea>
+            <button type="submit" class="send-btn" id="send-btn">➤</button>
+          </div>
+        </form>
+        <div class="chat-hint">Press Enter to send · Shift+Enter for new line</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/frontend/app.js"></script>
+</body>
+</html>
