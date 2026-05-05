@@ -378,39 +378,247 @@ body {
 
 .prog-card {
   width: 100%;
-  max-width: 580px;
-  padding: 40px;
+  max-width: 520px;
+  padding: 48px 40px;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 32px;
+  text-align: center;
 }
 
 .prog-header {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  text-align: center;
   align-items: center;
+  gap: 20px;
 }
 
 .prog-title {
   font-family: var(--font-display);
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
+  margin: 0;
+}
+
+.dots {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  margin-left: 4px;
+}
+
+.dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  animation: typing-bounce 1.4s infinite ease-in-out both;
+}
+
+.dots span:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.dots span:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+.spinner-wrap {
+  position: relative;
+  width: 72px;
+  height: 72px;
+}
+
+.spinner-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.06);
+  border-top-color: var(--primary);
+  animation: spin 1s linear infinite;
+}
+
+.spinner-ring.r2 {
+  inset: 8px;
+  border-top-color: var(--secondary);
+  animation-duration: 1.6s;
+  animation-direction: reverse;
+}
+
+.spinner-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .prog-repo-pill {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 16px;
-  background: var(--surface);
+  padding: 10px 18px;
+  background: rgba(0, 0, 0, 0.3);
   border: 1px solid var(--glass-border);
   border-radius: 20px;
   font-family: var(--font-mono);
   font-size: 13px;
   color: var(--secondary);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.state-rows {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.state-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 13px;
+}
+
+.state-row:last-child {
+  border-bottom: none;
+}
+
+.state-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+.dot-wait {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dot-active {
+  background: var(--primary);
+  box-shadow: 0 0 8px var(--primary);
+  animation: pulse-dot 2s infinite;
+}
+
+.dot-done {
+  background: var(--success);
+  box-shadow: none;
+  animation: none;
+}
+
+@keyframes pulse-dot {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.state-label {
+  flex: 1;
+  text-align: left;
+  color: var(--text-dim);
+  transition: color 0.3s ease;
+}
+
+.state-label.active {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.state-label.done {
+  color: var(--text-dim);
+}
+
+.state-val {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  min-width: 48px;
+  text-align: right;
+}
+
+.state-val.active {
+  color: var(--secondary);
+}
+
+.prog-hint {
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  max-width: 340px;
+  margin: 0;
+}
+
+.prog-result {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 30px;
+  border-radius: 20px;
+  text-align: center;
+  width: 100%;
+  animation: scaleIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.prog-result.visible {
+  display: flex;
+}
+
+.prog-result.success {
+  background: linear-gradient(180deg, var(--success-dim), rgba(45, 198, 83, 0.02));
+  border: 1px solid rgba(45, 198, 83, 0.2);
+}
+
+.prog-result.error {
+  background: linear-gradient(180deg, var(--danger-dim), rgba(239, 35, 60, 0.02));
+  border: 1px solid rgba(239, 35, 60, 0.2);
+}
+
+.prog-result-icon {
+  font-size: 42px;
+}
+
+.prog-result-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.prog-result.success .prog-result-title {
+  color: #57cc99;
+}
+
+.prog-result.error .prog-result-title {
+  color: #ff4d6d;
+}
+
+.prog-result-sub {
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.prog-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
 }
 
 /* Steps */

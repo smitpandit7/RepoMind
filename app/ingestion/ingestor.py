@@ -3,9 +3,6 @@ import git
 import chromadb
 from pathlib import Path
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
-from openai import OpenAI
-import json
 import re
 
 load_dotenv()
@@ -81,35 +78,12 @@ GENERIC_BOUNDARY = re.compile(
     r'^\s*(def |class |function |func |fn |public |private |void |async )'
 )
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+from app.shared.embedder import model
 client = chromadb.PersistentClient(path="./.chroma_db")
 
-openrouter = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY")
-)
-
-MODELS = [
-    "meta-llama/llama-3.3-70b-instruct:free",      # keep, just rate limited
-    "google/gemma-3-27b-it:free",                   # gemma 27b (more available)
-    "mistralai/mistral-7b-instruct:free",            # very reliable free model
-    "deepseek/deepseek-r1-distill-llama-70b:free",  # deepseek distill, usually available
-    "nousresearch/hermes-3-llama-3.1-405b:free",    # large, good fallback
-]
 
 
-def call_agent(prompt: str) -> str:
-    for m in MODELS:
-        try:
-            response = openrouter.chat.completions.create(
-                model=m,
-                messages=[{"role": "user", "content": prompt}],
-                timeout=30
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            print(f"Model {m} failed: {e}, trying next...")
-    return ""
+
 
 
 def clone_repo(repo_url: str, clone_path: str = "./.temp_repo") -> str:
@@ -121,39 +95,6 @@ def clone_repo(repo_url: str, clone_path: str = "./.temp_repo") -> str:
     print("Cloning done!")
     return clone_path
 
-
-def analyze_repo(repo_path: str, files: list[dict]) -> dict:
-    """Agent step 1 — analyze the repo structure and decide what matters."""
-    file_list = "\n".join([f["path"].replace(repo_path, "") for f in files[:50]])
-
-    prompt = f"""You are a code analyst. Look at this list of files from a repository and answer in JSON only.
-
-Files:
-{file_list}
-
-Respond with ONLY a JSON object like this (no markdown, no explanation):
-{{
-  "project_type": "django/react/springboot/cli-tool/library/etc",
-  "main_language": "python/javascript/java/go/rust/etc",
-  "important_dirs": ["src", "lib", "app", "core"],
-  "skip_dirs": ["build", "dist", "target"],
-  "key_files": ["main.py", "package.json", "README.md"]
-}}"""
-
-    result = call_agent(prompt)
-    try:
-        result = result.strip()
-        if "```" in result:
-            result = re.sub(r"```(?:json)?", "", result).strip().strip("```")
-        return json.loads(result)
-    except:
-        return {
-            "project_type": "unknown",
-            "main_language": "unknown",
-            "important_dirs": [],
-            "skip_dirs": list(SKIP_DIRS),
-            "key_files": []
-        }
 
 
 def load_files(repo_path: str, skip_dirs: list = None) -> list[dict]:
@@ -239,52 +180,17 @@ def smart_chunk_file(file: dict, chunk_size: int = 60, overlap: int = 10) -> lis
     return chunks
 
 
-def tag_chunk(chunk: dict, project_type: str, main_language: str) -> dict:
-    """Agent step 2 — add semantic tags to each chunk."""
-    prompt = f"""You are a code tagger. Look at this code chunk and respond with ONLY a JSON object (no markdown, no explanation).
-
-File: {chunk['filename']}
-Language: {main_language}
-Project type: {project_type}
-Code:
-{chunk['text'][:500]}
-
-Respond ONLY with:
-{{
-  "topic": "authentication|routing|database|ui|api|state_management|config|utility|testing|models|networking|parsing|error_handling|other",
-  "importance": "high|medium|low",
-  "summary": "one sentence describing what this code does"
-}}"""
-
-    result = call_agent(prompt)
-    try:
-        result = result.strip()
-        if "```" in result:
-            result = re.sub(r"```(?:json)?", "", result).strip().strip("```")
-        tags = json.loads(result)
-        chunk["topic"] = tags.get("topic", "other")
-        chunk["importance"] = tags.get("importance", "medium")
-        chunk["summary"] = tags.get("summary", "")
-    except:
-        chunk["topic"] = "other"
-        chunk["importance"] = "medium"
-        chunk["summary"] = ""
-    return chunk
 
 
-def ingest_repo(repo_url: str, collection_name: str = "github_rag"):
+def ingest_repo(repo_url: str, collection_name: str = "github_rag", on_status=None) -> int:
+    def emit(s):
+        if on_status:
+            on_status(s)
+
+    emit("cloning")
     clone_path = clone_repo(repo_url)
 
-    print("Loading files (initial pass)...")
     files = load_files(clone_path)
-
-    print("Agent analyzing repo structure...")
-    repo_info = analyze_repo(clone_path, files)
-    print(f"Detected: {repo_info['project_type']} project in {repo_info['main_language']}")
-
-    # Second pass — now with agent-suggested skip dirs merged in
-    print("Loading files (filtered pass)...")
-    files = load_files(clone_path, skip_dirs=repo_info.get("skip_dirs", []))
 
     try:
         client.delete_collection(name=collection_name)
@@ -298,29 +204,20 @@ def ingest_repo(repo_url: str, collection_name: str = "github_rag"):
         all_chunks.extend(smart_chunk_file(file))
     print(f"Total chunks: {len(all_chunks)}")
 
-    print("Agent tagging chunks (adding semantic metadata)...")
-    tagged_chunks = []
-    main_language = repo_info.get("main_language", "unknown")
-    project_type = repo_info.get("project_type", "unknown")
-
-    for i, chunk in enumerate(all_chunks):
-        if i % 20 == 0:
-            print(f"  Tagging chunk {i+1}/{len(all_chunks)}...")
-        tagged = tag_chunk(chunk, project_type, main_language)
-        tagged_chunks.append(tagged)
-
-    print("Generating embeddings...")
-    texts = [c["text"] for c in tagged_chunks]
+    emit("embedding")
+    texts = [c["text"] for c in all_chunks]
     embeddings = model.encode(texts, show_progress_bar=True)
 
+    emit("storing")
     collection = client.get_or_create_collection(name=collection_name)
 
+    global_idx = 0
     batch_size = 100
-    for i in range(0, len(tagged_chunks), batch_size):
-        batch = tagged_chunks[i:i + batch_size]
+    for i in range(0, len(all_chunks), batch_size):
+        batch = all_chunks[i:i + batch_size]
         batch_embeddings = embeddings[i:i + batch_size]
         collection.add(
-            ids=[f"chunk_{i+j}" for j in range(len(batch))],
+            ids=[f"chunk_{global_idx + j}" for j in range(len(batch))],
             embeddings=batch_embeddings.tolist(),
             documents=[c["text"] for c in batch],
             metadatas=[{
@@ -330,11 +227,9 @@ def ingest_repo(repo_url: str, collection_name: str = "github_rag"):
                 "start_line": c["start_line"],
                 "end_line": c["end_line"],
                 "chunk_type": c.get("chunk_type", "code_block"),
-                "topic": c.get("topic", "other"),
-                "importance": c.get("importance", "medium"),
-                "summary": c.get("summary", "")
             } for c in batch]
         )
+        global_idx += len(batch)
 
-    print(f"\nIngestion complete! {len(tagged_chunks)} chunks indexed and ready to query.")
-    return len(tagged_chunks)
+    print(f"\nIngestion complete! {len(all_chunks)} chunks indexed.")
+    return len(all_chunks)

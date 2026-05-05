@@ -1,42 +1,29 @@
+from openai import OpenAI
 import chromadb
 import re
-import time
-from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
-from openai import OpenAI
 import os
-
+from app.shared.embedder import model
 load_dotenv()
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
 client = chromadb.PersistentClient(path="./.chroma_db")
-
-openrouter = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY")
+llm_client = OpenAI(
+    base_url="http://localhost:11434/v1",
+    api_key="ollama"
 )
-
-MODELS = [
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "google/gemma-3-27b-it:free",
-    "mistralai/mistral-7b-instruct:free",
-    "deepseek/deepseek-r1-distill-llama-70b:free",
-]
 
 
 def call_llm(prompt: str) -> str:
-    for m in MODELS:
-        try:
-            response = openrouter.chat.completions.create(
-                model=m,
-                messages=[{"role": "user", "content": prompt}],
-                timeout=30
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            print(f"Model {m} failed: {e}, trying next...")
-            time.sleep(1)
-    return "All models are currently rate limited. Please try again in a few minutes."
+    try:
+        response = llm_client.chat.completions.create(
+            model="llama3.2",
+            messages=[{"role": "user", "content": prompt}],
+            timeout=120
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"Ollama call failed: {e}")
+        return "Failed to get a response. Please try again."
 
 
 def extract_filename_hint(question: str) -> str | None:
@@ -113,21 +100,10 @@ def build_context(chunks: list, metadatas: list) -> str:
 
 
 def build_prompt(question: str, context: str) -> str:
-    return f"""You are an expert code assistant analyzing a GitHub codebase.
-
-IMPORTANT FORMATTING RULES:
-- If the user asks to EXPLAIN a file, function, or code — for each section:
-  1. Show the code block first using ```language
-  2. Below it, write a clear explanation in bullet points
-  Repeat for every logical section of the file.
-
-- If the user asks a GENERAL question (how does X work, where is Y, what does Z do):
-  Answer in clear paragraphs with **bold** for important terms, bullet points for lists,
-  and `backticks` for inline code references.
-
-- Always mention filename and line numbers when referencing code.
-- Be thorough — if you have the full file, explain ALL parts of it, not just the imports.
-- Never dump a wall of text without structure.
+    return f"""You are an expert code assistant. Answer questions about the codebase using the provided code context.
+- Reference filenames and line numbers when relevant.
+- Use code blocks for code, bullet points for lists.
+- Be concise but complete.
 
 Code context:
 {context}

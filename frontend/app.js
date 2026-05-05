@@ -10,7 +10,7 @@ const rnd = new marked.Renderer();
 rnd.code = (code, lang) => {
   const l = lang || 'plaintext';
   let hi = code;
-  try { hi = hljs.getLanguage(l) ? hljs.highlight(code,{language:l}).value : hljs.highlightAuto(code).value; } catch(e){}
+  try { hi = hljs.getLanguage(l) ? hljs.highlight(code, { language: l }).value : hljs.highlightAuto(code).value; } catch (e) { }
   const id = 'c' + Math.random().toString(36).slice(2);
   return `<div><div class="code-hdr" style="display:flex; justify-content:space-between; padding:8px 16px; background:rgba(0,0,0,0.5); border-bottom:1px solid rgba(255,255,255,0.1);"><span class="code-lang" style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);text-transform:uppercase;">${l}</span><button class="code-copy-btn" onclick="cpCode('${id}')" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;font-family:var(--font-mono);">copy</button></div><pre><code id="${id}" class="hljs" style="display:block;padding:16px;background:transparent;border:none;overflow-x:auto;">${hi}</code></pre></div>`;
 };
@@ -21,7 +21,7 @@ function cpCode(id) {
   if (!el) return;
   navigator.clipboard.writeText(el.textContent);
   const btn = el.closest('div').querySelector('.code-copy-btn');
-  if (btn) { btn.textContent='copied!'; setTimeout(()=>btn.textContent='copy', 2000); }
+  if (btn) { btn.textContent = 'copied!'; setTimeout(() => btn.textContent = 'copy', 2000); }
 }
 
 // ── Screen management ──
@@ -33,8 +33,8 @@ function show(id) {
 }
 
 // ── Onboarding ──
-function pick(url) { 
-  document.getElementById('ob-url').value = url; 
+function pick(url) {
+  document.getElementById('ob-url').value = url;
 }
 
 async function startIndex() {
@@ -52,7 +52,7 @@ async function startIndex() {
   document.getElementById('ob-btn').disabled = true;
 
   show('progress');
-  resetSteps();
+  resetProgress();
 
   try {
     const res = await fetch(`${API}/ingest`, {
@@ -63,8 +63,8 @@ async function startIndex() {
     if (!res.ok) throw new Error('Server returned ' + res.status);
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(doPoll, 1500);
-  } catch(e) {
-    showProgError('Cannot connect to API', 'Make sure the FastAPI server is running at localhost:8000. Start it with: python3 main.py');
+  } catch (e) {
+    showError('Cannot connect to API — make sure the FastAPI server is running at localhost:8000');
   }
 }
 
@@ -76,32 +76,15 @@ function showObErr(msg) {
 }
 
 // ── Progress steps ──
-const STEPS = ['clone','read','embed','store'];
 
-function resetSteps() {
-  STEPS.forEach(s => {
-    setStep(s, 'waiting', null);
-  });
-  setBar(0, 'Initializing server process...');
-  document.getElementById('prog-result').style.display = 'none';
-  document.getElementById('prog-result').className = 'prog-result glass-panel';
+
+function resetProgress() {
+  ['clone', 'embed', 'store'].forEach(k => setRow(k, 'wait'));
+  const r = document.getElementById('prog-result');
+  r.className = 'prog-result';
   document.getElementById('chat-btn').style.display = 'none';
 }
 
-function setStep(key, state, detail) {
-  const stepEl = document.getElementById('step-' + key);
-  const det = document.getElementById('detail-' + key);
-
-  stepEl.className = 'step ' + (state === 'active' ? 'active-step' : state);
-
-  if (detail !== null) det.textContent = detail;
-}
-
-function setBar(pct, status) {
-  document.getElementById('prog-fill').style.width = pct + '%';
-  document.getElementById('bar-pct').textContent = pct + '%';
-  document.getElementById('bar-status').textContent = status;
-}
 
 // ── Poll backend status ──
 async function doPoll() {
@@ -110,81 +93,59 @@ async function doPoll() {
     const data = await res.json();
     const s = data.status || 'not_started';
     handleStatus(s);
-  } catch(e) {}
+  } catch (e) { }
 }
 
 function handleStatus(s) {
   if (s === 'cloning') {
-    setStep('clone', 'active', 'Fetching from remote GitHub repository...');
-    setBar(10, 'Cloning repository');
-
-  } else if (s === 'reading_files') {
-    setStep('clone', 'done', 'Repository successfully cloned locally');
-    setStep('read', 'active', 'Scanning and parsing code files...');
-    setBar(30, 'Reading files');
-
-  } else if (s.startsWith('chunking')) {
-    const files = s.split('|')[1] || '?';
-    setStep('clone', 'done', 'Repository cloned');
-    setStep('read', 'done', `Found and processed ${files} code files`);
-    setStep('embed', 'active', 'Breaking code into chunks for vectorization...');
-    setBar(50, 'Chunking code files');
-
-  } else if (s.startsWith('embedding')) {
-    const chunks = s.split('|')[1] || '?';
-    setStep('clone', 'done', 'Repository cloned');
-    setStep('read', 'done', 'Code files parsed');
-    setStep('embed', 'active', `Embedding ${chunks} total chunks into vectors...`);
-    setBar(60, 'Generating vector embeddings');
-
-  } else if (s.startsWith('storing')) {
-    const parts = s.split('|');
-    const cur = parseInt(parts[1]) || 0;
-    const total = parseInt(parts[2]) || 1;
-    const chunks = parts[3] || '?';
-    const pct = Math.round(60 + (cur / total) * 35);
-    setStep('clone', 'done', 'Repository cloned');
-    setStep('read', 'done', 'Code files parsed');
-    setStep('embed', 'done', `${chunks} embeddings generated via local LLM`);
-    setStep('store', 'active', `Storing batch ${cur} of ${total} into ChromaDB...`);
-    setBar(pct, `Storing into vector database (${cur}/${total})`);
-
+    setRow('clone', 'active');
+    setRow('embed', 'wait');
+    setRow('store', 'wait');
+  } else if (s === 'embedding') {
+    setRow('clone', 'done');
+    setRow('embed', 'active');
+    setRow('store', 'wait');
+  } else if (s === 'storing') {
+    setRow('clone', 'done');
+    setRow('embed', 'done');
+    setRow('store', 'active');
   } else if (s.startsWith('done')) {
     clearInterval(pollTimer);
+    ['clone', 'embed', 'store'].forEach(k => setRow(k, 'done'));
     const chunks = s.split('|')[1] || '?';
-    STEPS.forEach(k => setStep(k, 'done', null));
-    setStep('clone', 'done', 'Repository cloned');
-    setStep('read', 'done', 'Code files parsed');
-    setStep('embed', 'done', `${chunks} embeddings generated`);
-    setStep('store', 'done', `All ${chunks} chunks stored safely in ChromaDB`);
-    setBar(100, 'Pipeline Complete!');
-    showProgSuccess(`Codebase Indexed`, `${chunks} embeddings constructed. Ready for natural language queries.`);
-
+    showSuccess(`${chunks} chunks indexed — ready to chat`);
   } else if (s.startsWith('failed')) {
     clearInterval(pollTimer);
-    const msg = s.split('|').slice(1).join('|') || 'Internal server error';
-    showProgError('Indexing Failed', msg);
+    const msg = s.split('|').slice(1).join('|') || 'Unknown error';
+    showError(msg);
   }
 }
 
-function showProgSuccess(title, sub) {
+function setRow(key, state) {
+  const dot = document.getElementById('dot-' + key);
+  const label = document.getElementById('label-' + key);
+  const val = document.getElementById('val-' + key);
+  dot.className = 'state-dot ' + (state === 'active' ? 'dot-active' : state === 'done' ? 'dot-done' : 'dot-wait');
+  label.className = 'state-label ' + state;
+  val.textContent = state === 'active' ? 'running' : state === 'done' ? 'done' : '';
+  val.className = 'state-val' + (state === 'active' ? ' active' : '');
+}
+
+function showSuccess(sub) {
   const r = document.getElementById('prog-result');
-  r.className = 'prog-result success glass-panel';
-  r.style.display = 'flex';
+  r.className = 'prog-result success visible';
   document.getElementById('result-icon').textContent = '✅';
-  document.getElementById('result-title').textContent = title;
+  document.getElementById('result-title').textContent = 'Codebase indexed';
   document.getElementById('result-sub').textContent = sub;
   document.getElementById('chat-btn').style.display = 'inline-block';
 }
 
-function showProgError(title, sub) {
-  STEPS.forEach(k => setStep(k, 'waiting', null));
+function showError(msg) {
   const r = document.getElementById('prog-result');
-  r.className = 'prog-result error glass-panel';
-  r.style.display = 'flex';
+  r.className = 'prog-result error visible';
   document.getElementById('result-icon').textContent = '⚠️';
-  document.getElementById('result-title').textContent = title;
-  document.getElementById('result-sub').textContent = sub;
+  document.getElementById('result-title').textContent = 'Indexing failed';
+  document.getElementById('result-sub').textContent = msg;
 }
 
 // ── Navigation ──
@@ -222,10 +183,10 @@ function suggest(text) {
   document.getElementById('chat-form').requestSubmit();
 }
 
-document.getElementById('chat-ta').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter' && !e.shiftKey) { 
-    e.preventDefault(); 
-    document.getElementById('chat-form').requestSubmit(); 
+document.getElementById('chat-ta').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    document.getElementById('chat-form').requestSubmit();
   }
 });
 
@@ -256,21 +217,21 @@ async function send() {
     const data = await res.json();
     removeTyping(tid);
     addMsg('bot', data.answer || ('Error: ' + (data.detail || 'Unknown server fault')), data.sources);
-  } catch(e) {
+  } catch (e) {
     removeTyping(tid);
     addMsg('bot', '⚠ Failed to reach the API backend. Verify that the FastAPI server is alive.', null);
+  } finally {
+    loading = false;
+    document.getElementById('send-btn').disabled = false;
   }
-
-  loading = false;
-  document.getElementById('send-btn').disabled = false;
 }
 
 function icon(f) {
   if (f.endsWith('.py')) return '🐍';
-  if (f.endsWith('.js')||f.endsWith('.ts')) return '⚡';
-  if (f.endsWith('.html')||f.endsWith('.css')) return '🎨';
+  if (f.endsWith('.js') || f.endsWith('.ts')) return '⚡';
+  if (f.endsWith('.html') || f.endsWith('.css')) return '🎨';
   if (f.endsWith('.md')) return '📄';
-  if (f.endsWith('.json')||f.endsWith('.yaml')||f.endsWith('.yml')) return '⚙️';
+  if (f.endsWith('.json') || f.endsWith('.yaml') || f.endsWith('.yml')) return '⚙️';
   return '📁';
 }
 
@@ -339,7 +300,10 @@ function updateHist() {
   qHistory.slice(0, 10).forEach(q => {
     const i = document.createElement('div');
     i.className = 'sb-hist-item'; i.textContent = q;
-    i.onclick = () => { document.getElementById('chat-ta').value = q; suggest(q); };
+    i.onclick = () => {
+      document.getElementById('chat-ta').value = q;
+      document.getElementById('chat-ta').focus();
+    };
     list.appendChild(i);
   });
 }

@@ -1,13 +1,12 @@
 import os
-import shutil
+import threading
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from app.ingestion.ingestor import clone_repo, load_files, smart_chunk_file, model, client
-from app.query.query_engine import query_repo
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-import os
+from pydantic import BaseModel
+from app.ingestion.ingestor import ingest_repo, client 
+from app.query.query_engine import query_repo
 
 app = FastAPI(
     title="GitHub RAG API",
@@ -34,59 +33,29 @@ class QueryRequest(BaseModel):
     collection_name: str = "github_rag"
     top_k: int = 5
 
+
+
+_status_lock = threading.Lock()
 ingestion_status = {}
 
+def set_status(name: str, value: str):
+    with _status_lock:
+        ingestion_status[name] = value
+
+def get_status(name: str) -> str:
+    with _status_lock:
+        return ingestion_status.get(name, "not_started")
 
 def run_ingestion(repo_url: str, collection_name: str):
     try:
-        ingestion_status[collection_name] = "cloning"
-        clone_path = clone_repo(repo_url)
-
-        ingestion_status[collection_name] = "reading_files"
-        files = load_files(clone_path)
-
-        ingestion_status[collection_name] = f"chunking|{len(files)}"
-        all_chunks = []
-        for file in files:
-            all_chunks.extend(smart_chunk_file(file))
-
-        ingestion_status[collection_name] = f"embedding|{len(all_chunks)}"
-
-        try:
-            client.delete_collection(name=collection_name)
-            print("Old collection deleted, starting fresh...")
-        except:
-            pass
-
-        collection = client.get_or_create_collection(name=collection_name)
-        texts = [c["text"] for c in all_chunks]
-        embeddings = model.encode(texts, show_progress_bar=True)
-
-        batch_size = 100
-        batches = list(range(0, len(all_chunks), batch_size))
-        total_batches = len(batches)
-
-        for batch_num, i in enumerate(batches):
-            batch = all_chunks[i:i + batch_size]
-            batch_embeddings = embeddings[i:i + batch_size]
-            collection.add(
-                ids=[f"chunk_{i+j}" for j in range(len(batch))],
-                embeddings=batch_embeddings.tolist(),
-                documents=[c["text"] for c in batch],
-                metadatas=[{
-                    "filename": c["filename"],
-                    "filepath": c["filepath"],
-                    "start_line": c["start_line"],
-                    "end_line": c["end_line"]
-                } for c in batch]
-            )
-            ingestion_status[collection_name] = f"storing|{batch_num+1}|{total_batches}|{len(all_chunks)}"
-
-        ingestion_status[collection_name] = f"done|{len(all_chunks)}"
-        print("Ingestion complete! Repo is indexed and ready to query.")
+        set_status(collection_name, "cloning")
+        count = ingest_repo(
+            repo_url, collection_name,
+            on_status=lambda s: set_status(collection_name, s)
+        )
+        set_status(collection_name, f"done|{count}")
     except Exception as e:
-        ingestion_status[collection_name] = f"failed|{str(e)}"
-        print(f"Ingestion failed: {e}")
+        set_status(collection_name, f"failed|{str(e)}")
 
 
 @app.get("/")
@@ -96,7 +65,7 @@ def root():
 
 @app.post("/ingest")
 def ingest(request: IngestRequest, background_tasks: BackgroundTasks):
-    ingestion_status[request.collection_name] = "starting"
+    set_status(request.collection_name, "starting")
     background_tasks.add_task(
         run_ingestion,
         request.repo_url,
@@ -112,25 +81,25 @@ def ingest(request: IngestRequest, background_tasks: BackgroundTasks):
 
 @app.get("/status/{collection_name}")
 def status(collection_name: str):
-    s = ingestion_status.get(collection_name, "not_started")
-    return {
-        "collection_name": collection_name,
-        "status": s
-    }
+    s = get_status(collection_name)  # uses the lock
+    return {"collection_name": collection_name, "status": s}
 
 
 @app.post("/query")
 def query(request: QueryRequest):
+    try:
+        collection = client.get_collection(name=request.collection_name)
+    except Exception:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Collection '{request.collection_name}' not found. Run /ingest first."
+        )
     try:
         result = query_repo(
             question=request.question,
             collection_name=request.collection_name,
             top_k=request.top_k
         )
-        return {
-            "question": request.question,
-            "answer": result["answer"],
-            "sources": result["sources"]
-        }
+        return {"question": request.question, "answer": result["answer"], "sources": result["sources"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
