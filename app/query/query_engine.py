@@ -12,7 +12,7 @@ llm_client = OpenAI(
     api_key="ollama"
 )
 
-
+ 
 def call_llm(prompt: str) -> str:
     try:
         response = llm_client.chat.completions.create(
