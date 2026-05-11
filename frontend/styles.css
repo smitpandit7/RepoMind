@@ -180,6 +180,7 @@ body {
 }
 
 .ob-subtitle {
+  padding-top: 20px;
   font-size: 14px;
   color: var(--text-muted);
   line-height: 1.6;

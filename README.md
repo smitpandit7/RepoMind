@@ -1,93 +1,238 @@
-# RepoMind
+# RepoMind 🔍
+### Chat with any GitHub Repository using RAG
 
+RepoMind lets you paste any public GitHub repository URL and instantly chat with the entire codebase in natural language. It clones the repo, chunks the code intelligently at function and class boundaries, embeds it into a vector database, and uses an LLM to answer your questions with exact file and line references.
 
+---
 
-## Getting started
+## Demo
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+> Index any GitHub repo → Ask questions → Get answers with source citations
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+![Indexing](screenshots/indexing.png)
+![Chat](screenshots/chat.png)
 
-## Add your files
+---
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+## How It Works
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/smitpandit2004/repomind.git
-git branch -M main
-git push -uf origin main
+GitHub URL
+    ↓
+Clone Repository (GitPython)
+    ↓
+Language-Aware Chunking (AST boundary detection)
+    ↓
+Generate Embeddings (Sentence Transformers)
+    ↓
+Store in Vector Database (ChromaDB)
+    ↓
+User Query
+    ↓
+Hybrid Retrieval (Semantic Search + File-Specific Search)
+    ↓
+LLM Response with Source Citations (OpenAI GPT-4o mini)
 ```
 
-## Integrate with your tools
+---
 
-* [Set up project integrations](https://gitlab.com/smitpandit2004/repomind/-/settings/integrations)
+## Features
 
-## Collaborate with your team
+- **Language-aware chunking** — splits code at actual function and class boundaries for 30+ languages, not arbitrary line counts
+- **Hybrid retrieval** — combines semantic vector search with file-specific search for maximum accuracy
+- **Source citations** — every answer references exact filenames and line numbers
+- **Conversation history** — maintains context across multiple questions
+- **Real-time ingestion status** — live progress updates while indexing
+- **Supports 30+ languages** — Python, JavaScript, TypeScript, Go, Rust, Java, Kotlin, Dart, C++, and more
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+---
 
-## Test and Deploy
+## Tech Stack
 
-Use the built-in continuous integration in GitLab.
+| Layer | Technology |
+|---|---|
+| Backend | FastAPI, Python |
+| Vector Database | ChromaDB |
+| Embeddings | Sentence Transformers (`all-MiniLM-L6-v2`) |
+| LLM | Ollama qwen2.5-coder:3b |
+| Version Control | GitPython |
+| Frontend | HTML, CSS, Vanilla JS |
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+---
 
-***
+## Project Structure
 
-# Editing this README
+```
+github-rag-agent/
+├── app/
+│   ├── api/
+│   │   └── routes.py          # FastAPI routes
+│   ├── ingestion/
+│   │   └── ingestor.py        # Clone, chunk, embed, store
+│   ├── query/
+│   │   └── query_engine.py    # Retrieval + LLM response
+│   └── shared/
+│       ├── db.py              # Shared ChromaDB client
+│       └── embedder.py        # Shared embedding model
+├── frontend/
+│   ├── index.html             # Main UI
+│   ├── styles.css             # Styling
+│   └── app.js                 # Frontend logic
+├── main.py                    # App entry point
+├── requirements.txt
+└── .env                       # API keys (not committed)
+```
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+---
 
-## Suggestions for a good README
+## Getting Started
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+### Prerequisites
 
-## Name
-Choose a self-explaining name for your project.
+- Python 3.11+
+- Git
+- Ollama → [Get one here](https://ollama.com/)
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+### Installation
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+**1. Clone the repository:**
+```bash
+git clone https://gitlab.com/smitpandit2004/repomind.git
+cd repomind
+```
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+**2. Create a virtual environment:**
+```bash
+python -m venv venv
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+# Windows
+venv\Scripts\activate
+
+# Mac/Linux
+source venv/bin/activate
+```
+
+**3. Install dependencies:**
+```bash
+pip install -r requirements.txt
+```
+
+**4. Install and setup Ollama:**
+- Download Ollama from [ollama.com](https://ollama.com)
+- Then pull the required model:
+```bash
+ollama pull qwen2.5-coder:3b
+```
+
+**5. Create `.env` file in the project root:**
+```env
+# No API keys required — runs fully locally via Ollama
+```
+
+**6. Run the server:**
+```bash
+python main.py
+```
+
+**7. Open your browser:**
+```
+http://localhost:8000
+```
+
+---
 
 ## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+1. Paste any public GitHub repository URL
+2. Click **Index Repository** and wait for ingestion to complete
+3. Once indexed, click **Start Chatting**
+4. Ask anything about the codebase in natural language
+
+### Example Questions
+- *"Explain the main entry point logic"*
+- *"How is dependency injection handled?"*
+- *"Explain routes.py"*
+- *"What are the critical dependencies?"*
+- *"How is error handling implemented?"*
+- *"Draw the folder architecture"*
+
+---
+
+## How Chunking Works
+
+Most RAG systems chunk code at fixed line counts — this breaks functions in half and destroys context.
+
+RepoMind detects language-specific boundaries using regex patterns:
+
+```python
+# Python — splits at function and class definitions
+".py": re.compile(r'^\s*(def |async def |class )')
+
+# JavaScript — splits at function declarations and exports  
+".js": re.compile(r'^\s*(function |const \w+ ?= ?(async ?)?\(|class |export...)')
+
+# Go — splits at function and type definitions
+".go": re.compile(r'^\s*(func |type \w+ (struct|interface))')
+```
+
+This means each chunk is always a complete, semantically meaningful unit — a full function, a class, or a logical block.
+
+---
+
+## How Retrieval Works
+
+RepoMind uses a hybrid retrieval strategy:
+
+**If you mention a specific filename:**
+```
+"explain ingestor.py"
+→ Fetches ALL chunks from ingestor.py
+→ Adds top 2 semantic results from other files for context
+```
+
+**For general questions:**
+```
+"how is error handling done?"
+→ Pure semantic vector search
+→ Returns top-k most relevant chunks
+```
+
+This gives you complete file context when you need it, and broad codebase search when you don't.
+
+---
+
+## Limitations
+
+- Only supports **public** GitHub repositories
+- Large repositories (10,000+ files) may take some time to index
+- Requires an active internet connection for cloning and LLM calls
+
+---
 
 ## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+- [ ] Deploy live (public URL coming soon)
+- [ ] Support private repositories
+- [ ] Incremental re-indexing (only re-embed changed files)
+- [ ] Multiple repository support
+- [ ] Streaming LLM responses
+- [ ] Docker support
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+---
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+## Author
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+**Smit Pandit**
+- LinkedIn: [linkedin.com/in/smitpandit-bb7309247](www.linkedin.com/in/smit-pandit-bb7309247)
+- GitLab: [gitlab.com/smitpandit2004](https://gitlab.com/smitpandit2004/)
+- Email: panditsmit92@gmail.com
+
+---
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+This project is open source and available under the [MIT License](LICENSE).
+
+---
+
+⭐ If you found this useful, consider giving it a star!

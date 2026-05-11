@@ -1,9 +1,14 @@
 import os
 import git
+import uuid
+import stat
+import shutil
+import re
 import chromadb
 from pathlib import Path
 from dotenv import load_dotenv
-import re
+from app.shared.db import client
+from app.shared.embedder import model
 
 load_dotenv()
 
@@ -86,14 +91,30 @@ client = chromadb.PersistentClient(path="./.chroma_db")
 
 
 
-def clone_repo(repo_url: str, clone_path: str = "./.temp_repo") -> str:
+def clone_repo(repo_url: str, clone_path=None) -> str:
+    if clone_path is None:
+        clone_path = f"./.temp_repo_{uuid.uuid4().hex[:8]}"
+    
     if os.path.exists(clone_path):
-        import shutil
-        shutil.rmtree(clone_path)
+        # Windows fix — force remove read-only files
+        for root, dirs, files in os.walk(clone_path):
+            for file in files:
+                filepath = os.path.join(root, file)
+                try:
+                    os.chmod(filepath, stat.S_IWRITE)
+                except:
+                    pass
+        shutil.rmtree(clone_path, onerror=remove_readonly)
+    
     print(f"Cloning {repo_url}...")
     git.Repo.clone_from(repo_url, clone_path)
     print("Cloning done!")
     return clone_path
+
+
+def remove_readonly(func, path, _):
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
 
 
 

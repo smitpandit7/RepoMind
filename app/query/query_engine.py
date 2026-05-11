@@ -16,7 +16,7 @@ llm_client = OpenAI(
 def call_llm(prompt: str) -> str:
     try:
         response = llm_client.chat.completions.create(
-            model="llama3.2",
+            model="qwen2.5-coder:3b",
             messages=[{"role": "user", "content": prompt}],
             timeout=120
         )

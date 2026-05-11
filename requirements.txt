@@ -1,0 +1,8 @@
+chromadb==1.5.9
+fastapi==0.136.1
+GitPython==3.1.50
+openai==2.36.0
+pydantic==2.13.4
+python-dotenv==1.2.2
+sentence_transformers==5.4.1
+uvicorn==0.46.0
