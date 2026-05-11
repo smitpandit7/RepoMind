@@ -31,7 +31,7 @@ User Query
     ↓
 Hybrid Retrieval (Semantic Search + File-Specific Search)
     ↓
-LLM Response with Source Citations (OpenAI GPT-4o mini)
+LLM Response with Source Citations (Ollama qwen2.5-coder:3b)
 ```
 
 ---
