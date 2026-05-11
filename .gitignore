@@ -1,0 +1,30 @@
+# Environment
+.env
+.env.*
+
+# ChromaDB
+.chroma_db/
+
+# Temp cloned repos
+.temp_repo_*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
